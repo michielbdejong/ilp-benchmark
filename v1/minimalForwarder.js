@@ -17,6 +17,7 @@ function setupProxy(incomingPort, onwardCreds) {
     let str = ''
     req.on('data', (chunk) => { str += chunk })
     req.on('end', () => {
+      res.end('forwarding')
       fetch(onwardCreds.uri, {
         method: 'POST',
         headers: {
@@ -24,7 +25,7 @@ function setupProxy(incomingPort, onwardCreds) {
           Authorization: 'Bearer ' + onwardCreds.token
         },
         body: str
-      }).catch(() => {})
+      }).catch((e) => { console.error('could not proxy', e) })
     })
   }).listen(incomingPort)
 }

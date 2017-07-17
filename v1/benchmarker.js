@@ -42,7 +42,7 @@ function sendBatch(creds, batchSize) {
         'Content-Type': 'application/json',
         Authorization: 'Bearer ' + creds.token
       }, body: JSON.stringify(makeBody(thisBatchTimeout), null, 2)
-    }).catch(() => {})
+    }).catch((e) => { console.error('could not send', e) })
     numSent++
   }
 }
@@ -56,7 +56,7 @@ function parseIlpSecret(ilpSecret, method) {
   }
 }
 
-function setupDoner(port) {
+function setupDoner(port, cb) {
   http.createServer((req, res) => {
     let str = ''
     req.on('data', (chunk) => { str += chunk })
@@ -67,6 +67,9 @@ function setupDoner(port) {
         delete ids[arr[0]]
         numSucc++
         res.end('true')
+        if (numSucc === numSent) {
+          cb()
+        }
       } else {
         res.end('false')
       }
@@ -80,6 +83,7 @@ function setupFulfiller(creds, port) {
     let str = ''
     req.on('data', (chunk) => { str += chunk })
     req.on('end', () => {
+      res.end('thanks')
       const obj = JSON.parse(str)[0]
       const body = JSON.stringify([ obj.id, fulfillments[obj.executionCondition] ], null, 2)
       // console.log('Fulfilling', obj, body)
@@ -90,14 +94,31 @@ function setupFulfiller(creds, port) {
           Authorization: 'Bearer ' + creds.token
         },
         body
-      }).catch(() => {})
+      }).catch((e) => { console.error('could not fulfill', e) })
     })
     numFull++
   }).listen(port)
   console.log('Fulfiller set up on port', port, 'will fulfill using', creds)
 }
 
-function testServer(exe, script, senderPort, senderIlpSecret, receiverPort, receiverIlpSecret) {
+function testServer(exe, script, senderPort, senderIlpSecret, receiverPort, receiverIlpSecret, batchSize, batches) {
+  const senderCreds = parseIlpSecret(senderIlpSecret, 'send_transfer')
+  console.log(batches, 'batches of', batchSize)
+  let batchesLeft = batches
+  setupDoner(senderPort, () => {
+    batchesLeft--
+    if (batchesLeft === 0) {
+      process.exit(0)
+    }
+    sendBatch(senderCreds, batchSize)
+  })
+  setupFulfiller(parseIlpSecret(receiverIlpSecret, 'fulfill_condition'), receiverPort)
+  console.log({ senderCreds })
+  startTime = new Date().getTime()
+  sendBatch(senderCreds, batchSize)
+}
+
+function testServerIncr(exe, script, senderPort, senderIlpSecret, receiverPort, receiverIlpSecret) {
   const senderCreds = parseIlpSecret(senderIlpSecret, 'send_transfer')
   setupDoner(senderPort)
   setupFulfiller(parseIlpSecret(receiverIlpSecret, 'fulfill_condition'), receiverPort)
