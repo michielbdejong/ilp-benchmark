@@ -12,12 +12,20 @@ function parseIlpSecret(ilpSecret, method) {
 }
 
 function setupProxy(incomingPort, onwardCreds) {
+  let reading = 0
+  let writing = 0
+  setInterval(() => {
+    console.log({ incomingPort, onwardCreds, reading, writing })
+  }, 5000)
   console.log('we listen on port', incomingPort, 'and forward to', onwardCreds)
   http.createServer((req, res) => {
+    reading++
     let str = ''
     req.on('data', (chunk) => { str += chunk })
     req.on('end', () => {
       res.end('forwarding')
+      reading--
+      writing++
       fetch(onwardCreds.uri, {
         method: 'POST',
         headers: {
@@ -25,7 +33,9 @@ function setupProxy(incomingPort, onwardCreds) {
           Authorization: 'Bearer ' + onwardCreds.token
         },
         body: str
-      }).catch((e) => { console.error('could not proxy', e) })
+      }).catch((e) => { console.error('could not proxy', e) }).then(() => {
+        writing--
+      })
     })
   }).listen(incomingPort)
 }

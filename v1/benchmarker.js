@@ -101,7 +101,23 @@ function setupFulfiller(creds, port) {
   console.log('Fulfiller set up on port', port, 'will fulfill using', creds)
 }
 
-function testServer(exe, script, senderPort, senderIlpSecret, receiverPort, receiverIlpSecret, batchSize, batches) {
+function testServer(exe, script, senderPort, senderIlpSecret, receiverPort, receiverIlpSecret, numParallel, numTotal) {
+  const senderCreds = parseIlpSecret(senderIlpSecret, 'send_transfer')
+  let numLeft = numTotal
+  setupDoner(senderPort, () => {
+    numLeft--
+    if (numLeft === 0) {
+      process.exit(0)
+    }
+    sendBatch(senderCreds, 1)
+  })
+  setupFulfiller(parseIlpSecret(receiverIlpSecret, 'fulfill_condition'), receiverPort)
+  console.log({ senderCreds })
+  startTime = new Date().getTime()
+  sendBatch(senderCreds, numParallel)
+}
+
+function testServerBatched(exe, script, senderPort, senderIlpSecret, receiverPort, receiverIlpSecret, batchSize, batches) {
   const senderCreds = parseIlpSecret(senderIlpSecret, 'send_transfer')
   console.log(batches, 'batches of', batchSize)
   let batchesLeft = batches
