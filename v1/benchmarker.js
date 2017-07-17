@@ -1,5 +1,5 @@
 const http = require('http')
-const fetch = require('fetch')
+const fetch = require('node-fetch')
 const uuid = require('uuid/v4')
 const crypto = require('crypto')
 
@@ -12,14 +12,15 @@ for (let i=0; i<111110; i++) {
   fulfillments[condition] = fulfillment
   conditions.push(condition)
 }
-const numSent = 0
-const numSucc = 0
+let numSent = 0
+let numFull = 0
+let numSucc = 0
 let startTime
 
 function makeBody(thisBatchTimeout) {
   const outgoingUuid = uuid()
   const condition = conditions.pop()
-  ids[outgoingId] = fullfillments[condition]
+  ids[outgoingUuid] = fulfillments[condition]
   return [ {
     id: outgoingUuid,
     executionCondition: condition,
@@ -34,14 +35,14 @@ function makeBody(thisBatchTimeout) {
 
 function sendBatch(creds, batchSize) {
   const thisBatchTimeout = new Date(new Date().getTime() + 10000)
-  console.log(`After ${new Date().getTime() - startTime}ms, success ${numSucc}/${numSent}`)
+  console.log(`After ${new Date().getTime() - startTime}ms, success ${numSucc}/${numSent} (fulfilled ${numFull})`)
   for (let i=0; i<batchSize; i++) {
     fetch(creds.uri, {
       method: 'POST', headers: {
         'Content-Type': 'application/json',
         Authorization: 'Bearer ' + creds.token
       }, body: JSON.stringify(makeBody(thisBatchTimeout), null, 2)
-    })
+    }).catch(() => {})
     numSent++
   }
 }
@@ -55,12 +56,13 @@ function parseIlpSecret(ilpSecret, method) {
   }
 }
 
-function setupDoner(creds, port) {
+function setupDoner(port) {
   http.createServer((req, res) => {
     let str = ''
     req.on('data', (chunk) => { str += chunk })
     req.on('end', () => {
       const arr = JSON.parse(str)
+      // console.log('done', arr)
       if (ids[arr[0]] === arr[1]) {
         delete ids[arr[0]]
         numSucc++
@@ -70,6 +72,7 @@ function setupDoner(creds, port) {
       }
     })
   }).listen(port)
+  console.log('Doner set up on port', port)
 }
 
 function setupFulfiller(creds, port) {
@@ -77,26 +80,28 @@ function setupFulfiller(creds, port) {
     let str = ''
     req.on('data', (chunk) => { str += chunk })
     req.on('end', () => {
-      const obj = JSON.parse(str)
-      transferId = checkTransfer(obj)
+      const obj = JSON.parse(str)[0]
+      const body = JSON.stringify([ obj.id, fulfillments[obj.executionCondition] ], null, 2)
+      // console.log('Fulfilling', obj, body)
       fetch(creds.uri, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: 'Bearer ' + creds.token
         },
-        body: JSON.stringify([ obj.id, fulfillments[obj.executionCondition] ], null, 2)
-      })
+        body
+      }).catch(() => {})
     })
-    numSent++
+    numFull++
   }).listen(port)
+  console.log('Fulfiller set up on port', port, 'will fulfill using', creds)
 }
 
 function testServer(exe, script, senderPort, senderIlpSecret, receiverPort, receiverIlpSecret) {
   const senderCreds = parseIlpSecret(senderIlpSecret, 'send_transfer')
   setupDoner(senderPort)
   setupFulfiller(parseIlpSecret(receiverIlpSecret, 'fulfill_condition'), receiverPort)
-
+  console.log({ senderCreds })
   setTimeout(() => { sendBatch(senderCreds, 100) }, 10000)
   setTimeout(() => { sendBatch(senderCreds, 1000) }, 20000)
   setTimeout(() => { sendBatch(senderCreds, 10000) }, 30000)
